@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Receipt Scanner Simulator</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        /* Custom CSS for monospace font and fade-in effect */
+        body {
+            font-family: 'Inter', sans-serif; /* Using Inter as per guidelines */
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to top for better layout on smaller screens */
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .receipt-container {
+            max-width: 500px;
+            width: 100%;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .receipt-area {
+            background-color: #f7f7f7;
+            padding: 20px;
+            min-height: 300px; /* Ensure sufficient height */
+            max-height: 500px; /* Max height to allow scrolling */
+            overflow-y: auto; /* Enable scrolling for long receipts */
+            border-bottom: 1px solid #eee;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap; /* Preserve whitespace and wrap text */
+            color: #333;
+            border-radius: 0 0 12px 12px;
+            transition: opacity 0.5s ease-in-out; /* Fade-in effect */
+            opacity: 1;
+        }
+
+        .receipt-area p {
+            margin: 0;
+            opacity: 0; /* Initially hidden for fade-in effect */
+        }
+
+        .receipt-area p.typed {
+            opacity: 1; /* Show when typed */
+        }
+
+        .receipt-controls {
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-primary {
+            background-color: #4F46E5; /* Indigo-600 */
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #4338CA; /* Indigo-700 */
+        }
+
+        .btn-secondary {
+            background-color: #6B7280; /* Gray-500 */
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background-color: #4B5563; /* Gray-600 */
+        }
+
+        .btn-outline {
+            background-color: white;
+            color: #4F46E5;
+            border: 1px solid #4F46E5;
+        }
+
+        .btn-outline:hover {
+            background-color: #EEF2FF; /* Indigo-50 */
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 640px) {
+            .receipt-container {
+                margin: 10px;
+            }
+            .receipt-controls {
+                padding: 15px;
+            }
+            .btn {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+            .button-group button:last-child {
+                margin-bottom: 0;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+    <div class="receipt-container shadow-lg rounded-xl flex flex-col md:flex-row">
+        <!-- Input Form and Controls -->
+        <div class="receipt-controls p-6 bg-white rounded-t-xl md:rounded-l-xl md:rounded-t-none md:w-1/2">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Add New Item</h2>
+            <div class="mb-4">
+                <label for="itemName" class="block text-gray-700 text-sm font-medium mb-2">Item Name:</label>
+                <input type="text" id="itemName" class="form-input focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., Organic Bananas">
+            </div>
+            <div class="mb-6">
+                <label for="itemPrice" class="block text-gray-700 text-sm font-medium mb-2">Price (USD):</label>
+                <input type="number" id="itemPrice" step="0.01" class="form-input focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., 2.99">
+            </div>
+            <div class="button-group flex flex-col space-y-3">
+                <button id="addItemBtn" class="btn btn-primary">Add Item</button>
+                <button id="scanReceiptBtn" class="btn btn-secondary">Scan Receipt</button>
+                <button id="clearReceiptBtn" class="btn btn-outline">Clear Receipt</button>
+            </div>
+        </div>
+
+        <!-- Receipt Display Area -->
+        <div class="receipt-area p-6 bg-gray-50 rounded-b-xl md:rounded-r-xl md:rounded-b-none md:w-1/2">
+            <pre id="receiptDisplay" class="font-mono text-gray-800 text-sm leading-relaxed whitespace-pre-wrap"></pre>
+        </div>
+    </div>
+
+    <script>
+        const itemNameInput = document.getElementById('itemName');
+        const itemPriceInput = document.getElementById('itemPrice');
+        const addItemBtn = document.getElementById('addItemBtn');
+        const scanReceiptBtn = document.getElementById('scanReceiptBtn');
+        const clearReceiptBtn = document.getElementById('clearReceiptBtn');
+        const receiptDisplay = document.getElementById('receiptDisplay');
+
+        // Array to store grocery items
+        let groceryItems = [];
+        let typingTimeout; // To store the timeout ID for clearing
+
+        /**
+         * Adds an item to the groceryItems array.
+         * Validates input before adding.
+         */
+        function addItem() {
+            const name = itemNameInput.value.trim();
+            const price = parseFloat(itemPriceInput.value);
+
+            if (!name) {
+                alertUser('Please enter an item name.', 'error');
+                return;
+            }
+            if (isNaN(price) || price <= 0) {
+                alertUser('Please enter a valid positive price.', 'error');
+                return;
+            }
+
+            groceryItems.push({ name, price });
+            itemNameInput.value = ''; // Clear input fields
+            itemPriceInput.value = '';
+            alertUser(`'${name}' added to the list!`, 'success');
+        }
+
+        /**
+         * Simulates typing a receipt line by line with a delay.
+         */
+        async function scanReceipt() {
+            // Clear any existing typing animation
+            clearTimeout(typingTimeout);
+            receiptDisplay.innerHTML = ''; // Clear display
+
+            if (groceryItems.length === 0) {
+                alertUser('No items to scan. Please add some items first!', 'warning');
+                return;
+            }
+
+            const header = `----------------------------------------\n`;
+            const storeName = `           GROCERY OUTLET\n`;
+            const date = `         ${new Date().toLocaleDateString()}\n`;
+            const time = `         ${new Date().toLocaleTimeString()}\n`;
+            const headerEnd = `----------------------------------------\n\n`;
+
+            const receiptLines = [header, storeName, date, time, headerEnd];
+
+            // Format each item line
+            groceryItems.forEach(item => {
+                const priceFormatted = item.price.toFixed(2);
+                // Calculate padding to align price
+                const paddingNeeded = 30 - item.name.length;
+                const paddedName = item.name.padEnd(paddingNeeded, ' ');
+                receiptLines.push(`${paddedName}$${priceFormatted}\n`);
+            });
+
+            receiptLines.push(`\n----------------------------------------\n`);
+
+            // Calculate total
+            const total = groceryItems.reduce((sum, item) => sum + item.price, 0);
+            const totalFormatted = total.toFixed(2);
+            const totalLine = `TOTAL                 $${totalFormatted}\n`;
+            receiptLines.push(totalLine);
+            receiptLines.push(`----------------------------------------\n`);
+            receiptLines.push(`\n     THANK YOU FOR YOUR BUSINESS!\n`);
+            receiptLines.push(`     ---------------------------\n`);
+
+            let charIndex = 0;
+            let lineIndex = 0;
+            let currentLineElement = document.createElement('p'); // Create a <p> for each line
+
+            /**
+             * Recursive function to type characters one by one.
+             */
+            function typeCharacter() {
+                if (lineIndex < receiptLines.length) {
+                    const currentLine = receiptLines[lineIndex];
+
+                    if (charIndex < currentLine.length) {
+                        // Append character
+                        currentLineElement.textContent += currentLine.charAt(charIndex);
+                        receiptDisplay.appendChild(currentLineElement); // Append to DOM on first character
+                        currentLineElement.classList.add('typed'); // Add class for fade-in effect
+                        charIndex++;
+                        typingTimeout = setTimeout(typeCharacter, 30); // Adjust typing speed here
+                    } else {
+                        // Move to next line
+                        lineIndex++;
+                        charIndex = 0;
+                        currentLineElement = document.createElement('p'); // Create new <p> for next line
+                        typingTimeout = setTimeout(typeCharacter, 150); // Delay before starting next line
+                    }
+                } else {
+                    alertUser('Receipt scanned successfully!', 'info');
+                }
+            }
+
+            typeCharacter(); // Start typing animation
+        }
+
+        /**
+         * Clears the receipt display and resets the items array.
+         */
+        function clearReceipt() {
+            clearTimeout(typingTimeout); // Stop any ongoing typing animation
+            receiptDisplay.innerHTML = '';
+            groceryItems = [];
+            alertUser('Receipt cleared!', 'info');
+        }
+
+        /**
+         * Custom alert message box instead of window.alert
+         * @param {string} message - The message to display.
+         * @param {string} type - 'success', 'error', 'warning', or 'info'.
+         */
+        function alertUser(message, type) {
+            const alertBox = document.createElement('div');
+            alertBox.textContent = message;
+            alertBox.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                padding: 12px 25px;
+                border-radius: 8px;
+                font-size: 15px;
+                font-weight: 500;
+                color: white;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+                opacity: 0;
+                transition: opacity 0.5s ease-in-out, top 0.5s ease-in-out;
+                z-index: 1000;
+            `;
+
+            switch (type) {
+                case 'success':
+                    alertBox.style.backgroundColor = '#4CAF50';
+                    break;
+                case 'error':
+                    alertBox.style.backgroundColor = '#F44336';
+                    break;
+                case 'warning':
+                    alertBox.style.backgroundColor = '#FFC107';
+                    break;
+                case 'info':
+                default:
+                    alertBox.style.backgroundColor = '#2196F3';
+                    break;
+            }
+
+            document.body.appendChild(alertBox);
+
+            // Animate in
+            setTimeout(() => {
+                alertBox.style.opacity = '1';
+                alertBox.style.top = '30px';
+            }, 10);
+
+            // Animate out and remove
+            setTimeout(() => {
+                alertBox.style.opacity = '0';
+                alertBox.style.top = '0px';
+                alertBox.addEventListener('transitionend', () => alertBox.remove());
+            }, 3000);
+        }
+
+
+        // Event Listeners
+        addItemBtn.addEventListener('click', addItem);
+        scanReceiptBtn.addEventListener('click', scanReceipt);
+        clearReceiptBtn.addEventListener('click', clearReceipt);
+
+        // Allow pressing Enter in input fields to trigger Add Item
+        itemNameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addItem();
+            }
+        });
+        itemPriceInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addItem();
+            }
+        });
+
+        // Initial welcome message (optional)
+        window.onload = () => {
+             receiptDisplay.innerHTML = `<p>----------------------------------------</p>
+                                        <p>      Welcome to Receipt Simulator!</p>
+                                        <p>  Add items on the left and click 'Scan'</p>
+                                        <p>----------------------------------------</p>`;
+        };
+
+    </script>
+</body>
+</html>
+
